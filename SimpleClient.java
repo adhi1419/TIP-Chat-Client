@@ -1,12 +1,3 @@
-/* I have not included the package name, because I
-*  was having issues importing the Message class
-*  if I give this a package name(I used the same 
-*  package name in the Message class too)
-*  PS: I'm not using any IDE, so, I cannot 
-*  create a project which the IDE automatically manages
-*  under the same package.
-*/
-
 import java.io.ObjectOutputStream;
 import java.io.InputStreamReader;
 import java.io.BufferedReader;
