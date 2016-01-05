@@ -67,7 +67,7 @@ public class SimpleClient {
 						.logMessage("You are messages are not being logged now.");
 			}
 			if (!(line.contains("~") || line.contains("--"))) {
-				if(line.length() > 0)
+				if (line.length() > 0)
 					sendMessage(line);
 			} else {
 				System.out
