@@ -10,6 +10,8 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.Scanner;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
 
 public class SimpleServer {
 
@@ -27,6 +29,7 @@ public class SimpleServer {
 	public static ArrayList<String> clients = new ArrayList<String>();
 	public static ArrayList<SimpleClientConnection> clientconnections = new ArrayList<SimpleClientConnection>();
 	public static boolean isServerRunning = true;
+	public static MessageQueue msgQueue = new MessageQueue();
 
 	public static void main(String args[]) throws Exception {
 		ServerSocket server = new ServerSocket(8888);
@@ -34,6 +37,7 @@ public class SimpleServer {
 		long currentId = 0;
 		System.out.println("Server listening for connections!");
 		System.out.println("Type //servhelp for help!");
+		msgQueue.start();
 		while (isServerRunning) {
 			Socket s = server.accept();
 			System.out.println("New connection! ID: " + currentId);
@@ -90,7 +94,6 @@ class SimpleClientConnection extends Thread {
 	String nick;
 
 	public SimpleClientConnection(long id, Socket s) throws Exception {
-		// super(); //I Do not understand why we have to use it.
 		mId = id;
 		mSocket = s;
 	}
@@ -110,45 +113,11 @@ class SimpleClientConnection extends Thread {
 						mSocket.getInputStream()));
 				String line;
 				while ((line = br.readLine()) != null) {
-					msg.parseMessage(line);
-					if (msg.getMessageType().startsWith("PM")) {
-						if (!SimpleServer.clients.get((int) mId)
-								.contains("***")) {
-							String txt = "["
-									+ msg.getTime()
-									+ " | "
-									+ msg.getIP()
-									+ " | "
-									+ msg.getMessageType()
-											.replace("--", " to ") + "] <"
-									+ msg.getNick() + "> " + msg.getMessage();
-							System.out.println(txt);
-							for (SimpleClientConnection a : SimpleServer.clientconnections) {
-								a.sendPM(txt, msg.getMessageType());
-							}
-						}
-					} else if (msg.getMessageType().startsWith("BROADCAST")) {
-						if (!SimpleServer.clients.get((int) mId)
-								.contains("***")) {
-							String txt = "[" + msg.getTime() + " | "
-									+ msg.getIP() + "] <" + msg.getNick()
-									+ "> " + msg.getMessage();
-							System.out.println(txt);
-							for (SimpleClientConnection a : SimpleServer.clientconnections) {
-								a.broadcastMessage(txt);
-							}
-						}
-					} else if (msg.getMessageType()
-							.startsWith("CONTROLMESSAGE")) {
-						String txt = msg.getNick() + "~" + msg.getMessage();
-						System.out.println(SimpleServer.getTimeStamp()
-								+ "<ServerView> "
-								+ txt.substring(0, txt.indexOf("~"))
-								+ " sent the following command: "
-								+ txt.substring(txt.indexOf("~") + 1));
-						for (SimpleClientConnection a : SimpleServer.clientconnections) {
-							a.sendControlMessage(txt, msg.getMessageType());
-						}
+					if (!SimpleServer.clients.get((int) mId).contains("***")) {
+						Message rec = new Message();
+						rec.parseMessage(line);
+						rec.setNick(nick);
+						SimpleServer.msgQueue.addMessageToQueue(rec);
 					}
 				}
 				mSocket.close();
@@ -165,7 +134,6 @@ class SimpleClientConnection extends Thread {
 		}
 	}
 
-	// Method Names against convention, lite
 	void broadcastMessage(String msg) {
 		String line = msg;
 		try {
@@ -225,18 +193,16 @@ class SimpleClientConnection extends Thread {
 		try {
 			OutputStreamWriter osw = new OutputStreamWriter(
 					mSocket.getOutputStream());
-			if (line.startsWith("<***Server***> !kick")) {
-				String asshole = line.substring(21);
+			if (line.startsWith("!kick")) {
+				String asshole = line.substring(6);
 				if (SimpleServer.clients.indexOf(asshole) == mId) {
-					osw.write("Fuck Off Motherfucker!\n");
-					osw.flush();
-					mSocket.close();
+					quit();
 					SimpleServer.clients.set((int) mId, asshole + "**");
 					System.out.println(SimpleServer.getTimeStamp()
 							+ "<***Server***> " + asshole + " was kicked!");
 				}
-			} else if (line.startsWith("<***Server***> !mute")) {
-				String asshole = line.substring(21);
+			} else if (line.startsWith("!mute")) {
+				String asshole = line.substring(6);
 				if (SimpleServer.clients.indexOf(asshole) == mId) {
 					osw.write("You are muted, huehuehuehue!\n");
 					osw.flush();
@@ -244,8 +210,8 @@ class SimpleClientConnection extends Thread {
 					System.out.println(SimpleServer.getTimeStamp()
 							+ "<***Server***> " + asshole + " was muted!");
 				}
-			} else if (line.startsWith("<***Server***> !unmute")) {
-				String niceguy = line.substring(23);
+			} else if (line.startsWith("!unmute")) {
+				String niceguy = line.substring(8);
 				if (SimpleServer.clients.indexOf(niceguy + "***") == mId) {
 					osw.write("You can start wasting your life again!\n");
 					osw.flush();
@@ -254,12 +220,79 @@ class SimpleClientConnection extends Thread {
 							+ "<***Server***> " + niceguy + " was unmuted!");
 				}
 			} else {
-				System.out.println(SimpleServer.getTimeStamp() + line);
-				osw.write(SimpleServer.getTimeStamp() + line + "\n");
+				osw.write(SimpleServer.getTimeStamp() + "<***Server***> "
+						+ line + "\n");
 				osw.flush();
 			}
 		} catch (IOException e) {
 			e.printStackTrace(System.out);
+		}
+	}
+
+	void quit() {
+		serverMessage("Connection with Client " + mId + " is being closed.");
+		try {
+			mSocket.close();
+		} catch (IOException e) {
+
+		}
+	}
+}
+
+class MessageQueue extends Thread {
+
+	BlockingQueue<Message> msgQueue = new ArrayBlockingQueue<Message>(1024);
+
+	@Override
+	public void run() {
+		while (SimpleServer.isServerRunning) {
+			try {
+				if (msgQueue.size() > 0) {
+					Message msg = msgQueue.take();
+					if (msg.getMessageType().startsWith("PM")) {
+
+						String txt = "[" + msg.getTime() + " | " + msg.getIP()
+								+ " | "
+								+ msg.getMessageType().replace("--", " to ")
+								+ "] <" + msg.getNick() + "> "
+								+ msg.getMessage();
+						System.out.println(txt);
+						for (SimpleClientConnection a : SimpleServer.clientconnections) {
+							a.sendPM(txt, msg.getMessageType());
+						}
+
+					} else if (msg.getMessageType().startsWith("BROADCAST")) {
+
+						String txt = "[" + msg.getTime() + " | " + msg.getIP()
+								+ "] <" + msg.getNick() + "> "
+								+ msg.getMessage();
+						System.out.println(txt);
+						for (SimpleClientConnection a : SimpleServer.clientconnections) {
+							a.broadcastMessage(txt);
+						}
+					} else if (msg.getMessageType()
+							.startsWith("CONTROLMESSAGE")) {
+						String txt = msg.getNick() + "~" + msg.getMessage();
+						System.out.println(SimpleServer.getTimeStamp()
+								+ "<ServerView> "
+								+ txt.substring(0, txt.indexOf("~"))
+								+ " sent the following command: "
+								+ txt.substring(txt.indexOf("~") + 1));
+						for (SimpleClientConnection a : SimpleServer.clientconnections) {
+							a.sendControlMessage(txt, msg.getMessageType());
+						}
+					}
+				}
+			} catch (InterruptedException e) {
+			}
+		}
+	}
+
+	public void addMessageToQueue(Message msg) {
+		try {
+			msgQueue.put(msg);
+		} catch (InterruptedException e) {
+			System.out.println("Error: " + e);
 		}
 	}
 }
@@ -269,21 +302,22 @@ class ServerOutput extends Thread {
 	public void run() {
 		String line;
 		Scanner s = new Scanner(System.in);
-		while (!((line = s.nextLine()) == ":quit")) {
-			line = "<***Server***> " + line;
+		while (!((line = s.nextLine()).equals(":quit"))) {
 			// Will find a better home for these some time later
-			if (line.startsWith("<***Server***> //list")) {
+			if (line.equals("//list")) {
 				System.out.println(SimpleServer.getControlMessage("list"));
-			} else if (line.startsWith("<***Server***> //servhelp")) {
+			} else if (line.equals("//servhelp")) {
 				System.out.println(SimpleServer.servhelp);
 			} else {
+				System.out.println(SimpleServer.getTimeStamp()
+						+ "<***Server***> " + line);
 				for (SimpleClientConnection a : SimpleServer.clientconnections)
 					a.serverMessage(line);
 			}
 		}
-		for (SimpleClientConnection a : SimpleServer.clientconnections)
-			a.serverMessage(SimpleServer.getTimeStamp()
-					+ "<***Server***> Bye bye!");
+		for (SimpleClientConnection a : SimpleServer.clientconnections) {
+			a.quit();
+		}
 		SimpleServer.isServerRunning = false;
 		s.close();
 	}
