@@ -9,9 +9,12 @@ public class Message implements Serializable {
 	String ip;
 	String time;
 	String nick;
-	boolean status = true;
+	int destId;
 
-	void parseMessage(String message) {
+	Message() {
+	}
+
+	Message(String message) {
 		Scanner splitter = new Scanner(message);
 		splitter.useDelimiter("~");
 		msgtype = splitter.next();
@@ -21,12 +24,13 @@ public class Message implements Serializable {
 		splitter.close();
 	}
 
-	void setNick(String nickname) {
-		nick = nickname;
+	Message(String message, int id) {
+		msg = message;
+		destId = id;
 	}
 
-	void leave() {
-		status = false;
+	void setNick(String nickname) {
+		nick = nickname;
 	}
 
 	String getNick() {
@@ -49,7 +53,8 @@ public class Message implements Serializable {
 		return msg;
 	}
 
-	boolean isOnline() {
-		return status;
+	int getDestinationID() {
+		return destId;
 	}
+
 }
