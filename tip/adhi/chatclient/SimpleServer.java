@@ -19,14 +19,17 @@ public class SimpleServer {
 	static String HELP_TEXT = "Use :quit for closing connection with server\n"
 			+ "Use !msg <nick> <message> for sending PMs\n"
 			+ "Check out //list, for list of Users connected to this server\n"
+			+ "//checknick <nick> to check if that nick is Online\n"
 			+ "//startlog to start logging Messages(In ./log/<nick>.txt)\n"
 			+ "//stoplog to stop logging messages";
 	public static String SERV_HELP = "!kick <nick> for closing connection with that client\n"
 			+ "!mute <nick> for mutingthat client\n"
 			+ "!unmute <nick> for unmuting that nick\n"
+			+ "!say <nick> <msg> to speak as the nick\n"
 			+ "//list for a list of your niggas!\n"
 			+ ":quit to close the server";
 	public static String SERVER_NICK = "<***Server***> ";
+	public static String CLIENT_WELCOME_TEXT = "Use //help for Help on Commands you can use";
 
 	public static HashMap<String, SimpleClientConnection> clients = new HashMap<String, SimpleClientConnection>();
 	public static boolean isServerRunning = true;
@@ -35,6 +38,8 @@ public class SimpleServer {
 	public static void main(String args[]) throws Exception {
 		ServerSocket server = new ServerSocket(8888);
 		new ServerOutput().start();
+		CLIENT_WELCOME_TEXT = "This server is running since " + getTimeStamp()
+				+ "\n" + CLIENT_WELCOME_TEXT;
 		int currentId = 0;
 		System.out.println("Server listening for connections!");
 		System.out.println("Type //servhelp for help!");
@@ -113,6 +118,8 @@ class SimpleClientConnection extends Thread {
 				SimpleServer.clients.put(nick,
 						SimpleServer.clients.remove("Client--" + mId));
 				System.out.println("*" + nick + " joined (ID: " + mId + ")");
+				SimpleServer.msgQueue.addMessageToQueue(new Message(
+						SimpleServer.CLIENT_WELCOME_TEXT, nick));
 				String line;
 				while ((line = br.readLine()) != null) {
 					if (!isNickMuted) {
@@ -307,14 +314,24 @@ class ServerOutput extends Thread {
 				System.out.println(SimpleServer.getTimeStamp()
 						+ SimpleServer.SERVER_NICK + niceguy + " not found!");
 			}
+		} else if (line.startsWith("!say")) {
+			String msg = line.substring(5);
+			String nick = msg.substring(0, line.indexOf(" "));
+			msg = msg.substring(msg.indexOf(" ") + 1);
+			System.out.println(SimpleServer.getTimeStamp() + "Spoke as " + nick
+					+ ": " + msg);
+			broadcast(SimpleServer.getTimeStamp() + "<" + nick + "> " + msg);
 		} else {
 			System.out.println(SimpleServer.getTimeStamp()
 					+ SimpleServer.SERVER_NICK + line);
-			for (String a : SimpleServer.clients.keySet()) {
-				SimpleServer.msgQueue.addMessageToQueue(new Message(
-						SimpleServer.getTimeStamp() + SimpleServer.SERVER_NICK
-								+ line, a));
-			}
+			broadcast(SimpleServer.getTimeStamp() + SimpleServer.SERVER_NICK
+					+ line);
+		}
+	}
+
+	void broadcast(String s) {
+		for (String a : SimpleServer.clients.keySet()) {
+			SimpleServer.msgQueue.addMessageToQueue(new Message(s, a));
 		}
 	}
 }

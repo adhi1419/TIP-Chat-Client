@@ -44,9 +44,7 @@ public class SimpleClient {
 		// This Thread listens for messages from the Server
 		ClientReceiver cr = new ClientReceiver(sock);
 		cr.start();
-
-		System.out.println("Use //help for Help");
-
+		
 		// The Client chats here
 		String line;
 		while (!((line = s.nextLine()).equals(":quit")) && !sock.isClosed()) {
