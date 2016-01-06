@@ -1,3 +1,5 @@
+package tip.adhi.chatclient;
+
 import java.io.Serializable;
 import java.util.Scanner;
 
@@ -9,10 +11,7 @@ public class Message implements Serializable {
 	String ip;
 	String time;
 	String nick;
-	int destId;
-
-	Message() {
-	}
+	String destNick;
 
 	Message(String message) {
 		Scanner splitter = new Scanner(message);
@@ -24,9 +23,9 @@ public class Message implements Serializable {
 		splitter.close();
 	}
 
-	Message(String message, int id) {
+	Message(String message, String dest) {
 		msg = message;
-		destId = id;
+		destNick = dest;
 	}
 
 	void setNick(String nickname) {
@@ -53,8 +52,8 @@ public class Message implements Serializable {
 		return msg;
 	}
 
-	int getDestinationID() {
-		return destId;
+	String getDestination() {
+		return destNick;
 	}
 
 }

@@ -1,17 +1,18 @@
-import java.io.ObjectOutputStream;
-import java.io.InputStreamReader;
+package tip.adhi.chatclient;
+
 import java.io.BufferedReader;
 import java.io.File;
-import java.io.PrintWriter;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
-import java.util.Scanner;
-import java.util.Date;
-import java.text.SimpleDateFormat;
-import java.sql.Timestamp;
-import java.net.UnknownHostException;
+import java.io.PrintWriter;
 import java.net.Socket;
+import java.net.UnknownHostException;
+import java.sql.Timestamp;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Scanner;
 
 public class SimpleClient {
 	static String msg;
@@ -28,27 +29,17 @@ public class SimpleClient {
 
 		Scanner s = new Scanner(System.in);
 
-		/*
-		 * Message Object, which is sent over the Socket, once the Client sets a
-		 * nick. The Message class contains a Message Parser and also carries a
-		 * Client's Nick and also status(Online/Offline).
-		 */
-		Message msg = new Message();
-
-		ObjectOutputStream oos = new ObjectOutputStream(sock.getOutputStream());
-
 		// Setting nick
 		while (nick == null) {
 			System.out.print("Enter your Nick: ");
 			nick = s.nextLine();
-			if (nick.contains("*") || nick.contains("~") || nick.contains("--")) {
-				System.out
-						.println("Nick contains Invalid Character(s) (~/--/*)");
+			if (nick.contains("~") || nick.contains("--")) {
+				System.out.println("Nick contains Invalid Character(s) (~/--)");
 				nick = null;
 			}
 		}
-		msg.setNick(nick);
-		oos.writeObject(msg); // The Message Object is now written to the stream
+
+		sendMessage(nick);
 
 		// This Thread listens for messages from the Server
 		ClientReceiver cr = new ClientReceiver(sock);
@@ -58,13 +49,13 @@ public class SimpleClient {
 
 		// The Client chats here
 		String line;
-		while (!((line = s.nextLine()).equals(":quit"))) {
+		while (!((line = s.nextLine()).equals(":quit")) && !sock.isClosed()) {
 			if (line.equals("//startlog"))
 				log = true;
 			else if (line.equals("//stoplog")) {
 				log = false;
 				SimpleClient
-						.logMessage("You are messages are not being logged now.");
+						.logMessage("Your messages are not being logged now.");
 			}
 			if (!(line.contains("~") || line.contains("--"))) {
 				if (line.length() > 0)
@@ -74,8 +65,8 @@ public class SimpleClient {
 						.println("Message contains Invalid Character(s) (~/--)");
 			}
 		}
-		oos.close();
 		s.close();
+		sock.close();
 	}
 
 	/*
@@ -111,9 +102,9 @@ public class SimpleClient {
 			osw.write(msgtype + "~" + timeStamp + "~" + ip + "~" + msg + "\n");
 			osw.flush();
 		} catch (UnknownHostException u) {
-
+			System.out.println("Error while sending Message:\n" + u);
 		} catch (IOException io) {
-
+			System.out.println("Error while sending Message:\n" + io);
 		}
 	}
 
@@ -128,7 +119,7 @@ public class SimpleClient {
 			logger.flush();
 			logger.close();
 		} catch (IOException io) {
-
+			System.out.println("Error while logging Message:\n" + io);
 		}
 	}
 }
@@ -152,8 +143,14 @@ class ClientReceiver extends Thread {
 					SimpleClient.logMessage(line);
 				}
 			}
+			mSocket.close();
 		} catch (IOException e) {
-			// e.printStackTrace(System.out); //Too much spam for layman users
+			if (e.toString().contains("Socket closed")) {
+				System.out
+						.println("The Server closed the connection with the Client!");
+			} else {
+				System.out.println("Error while receiving Message:\n" + e);
+			}
 		}
 
 	}

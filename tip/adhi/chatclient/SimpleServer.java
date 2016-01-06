@@ -1,40 +1,41 @@
+package tip.adhi.chatclient;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.io.ObjectInputStream;
 import java.io.OutputStreamWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.sql.Timestamp;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.Scanner;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 
 public class SimpleServer {
 
-	static String helptext = "Use :quit for closing connection with server\n"
+	static String HELP_TEXT = "Use :quit for closing connection with server\n"
 			+ "Use !msg <nick> <message> for sending PMs\n"
 			+ "Check out //list, for list of Users connected to this server\n"
 			+ "//startlog to start logging Messages(In ./log/<nick>.txt)\n"
 			+ "//stoplog to stop logging messages";
-	public static String servhelp = "!kick <nick> for closing connection with that client\n"
+	public static String SERV_HELP = "!kick <nick> for closing connection with that client\n"
 			+ "!mute <nick> for mutingthat client\n"
 			+ "!unmute <nick> for unmuting that nick\n"
 			+ "//list for a list of your niggas!\n"
 			+ ":quit to close the server";
+	public static String SERVER_NICK = "<***Server***> ";
 
-	public static ArrayList<String> clients = new ArrayList<String>();
-	public static ArrayList<SimpleClientConnection> clientconnections = new ArrayList<SimpleClientConnection>();
+	public static HashMap<String, SimpleClientConnection> clients = new HashMap<String, SimpleClientConnection>();
 	public static boolean isServerRunning = true;
 	public static MessageQueue msgQueue = new MessageQueue();
 
 	public static void main(String args[]) throws Exception {
 		ServerSocket server = new ServerSocket(8888);
 		new ServerOutput().start();
-		long currentId = 0;
+		int currentId = 0;
 		System.out.println("Server listening for connections!");
 		System.out.println("Type //servhelp for help!");
 		msgQueue.start();
@@ -44,29 +45,22 @@ public class SimpleServer {
 			SimpleClientConnection scc = new SimpleClientConnection(currentId,
 					s);
 			scc.start();
-			clientconnections.add((int) currentId, scc);
-			clients.add((int) currentId++, "placeholder");
+			clients.put("Client--" + currentId, scc);
+			currentId++;
 		}
 		server.close();
 	}
 
 	public static String getControlMessage(String cmessage) {
 		if (cmessage.equals("help")) {
-			return helptext;
+			return HELP_TEXT;
 		} else if (cmessage.equals("list")) {
-			// If nick ends with *, the client is Offline
-			// If nick ends with **, the client is Kicked
-			// If nick ends with ***, the client is Muted
 			String clientlist = "";
-			for (String a : clients) {
-				if (!a.contains("**")) {
-					clientlist += a.replace("*", " (Offline)") + ", ";
-				} else {
-					if (!a.contains("***"))
-						clientlist += a.replace("**", " (Kicked)") + ", ";
-				}
+			for (String a : clients.keySet()) {
+				clientlist += a + ", ";
 			}
-			clientlist = clientlist.substring(0, clientlist.length() - 2);
+			clientlist = clientlist.substring(0, clientlist.length()
+					- (clientlist.length() > 0 ? 2 : 0));
 			return clientlist;
 		} else if (cmessage.equals("startlog")) {
 			return "You are messages are now being logged.";
@@ -74,10 +68,10 @@ public class SimpleServer {
 			return "You are messages are not being logged now.";
 		} else if (cmessage.startsWith("checknick")) {
 			String a = cmessage.substring(10);
-			if (clients.contains(a)) {
-				return "The nick " + a + " is Taken";
+			if (clients.keySet().contains(a)) {
+				return a + " is Online";
 			} else {
-				return "The nick " + a + " is Available";
+				return a + " is Offline";
 			}
 		} else {
 			return "Command not found";
@@ -92,11 +86,12 @@ public class SimpleServer {
 }
 
 class SimpleClientConnection extends Thread {
-	long mId;
+	int mId;
 	private Socket mSocket;
+	public boolean isNickMuted = false;
 	String nick;
 
-	public SimpleClientConnection(long id, Socket s) throws Exception {
+	public SimpleClientConnection(int id, Socket s) throws Exception {
 		mId = id;
 		mSocket = s;
 	}
@@ -104,19 +99,23 @@ class SimpleClientConnection extends Thread {
 	@Override
 	public void run() {
 		try {
-			ObjectInputStream in = new ObjectInputStream(
-					mSocket.getInputStream());
-			Message msg = (Message) in.readObject();
-			nick = msg.getNick();
-			SimpleServer.clients.set((int) mId, nick);
-			System.out.println("*" + nick + " joined (ID: " + mId + ")");
+			BufferedReader br = new BufferedReader(new InputStreamReader(
+					mSocket.getInputStream()));
 
-			try {
-				BufferedReader br = new BufferedReader(new InputStreamReader(
-						mSocket.getInputStream()));
+			nick = (new Message(br.readLine())).getMessage();
+
+			if (SimpleServer.clients.keySet().contains(nick)) {
+				sendMessage(SimpleServer.getTimeStamp()
+						+ SimpleServer.SERVER_NICK + "Nick " + nick
+						+ " has already been taken");
+				nick = "Client--" + mId;
+			} else {
+				SimpleServer.clients.put(nick,
+						SimpleServer.clients.remove("Client--" + mId));
+				System.out.println("*" + nick + " joined (ID: " + mId + ")");
 				String line;
 				while ((line = br.readLine()) != null) {
-					if (!SimpleServer.clients.get((int) mId).contains("***")) {
+					if (!isNickMuted) {
 						Message rec = new Message(line);
 						rec.setNick(nick);
 						if (rec.getMessageType().startsWith("PM")) {
@@ -129,16 +128,17 @@ class SimpleClientConnection extends Thread {
 						}
 					}
 				}
-				mSocket.close();
-				System.out.println("*" + nick + " left (ID: " + mId + ")");
-				SimpleServer.clients.set((int) mId, nick + "*");
-			} catch (IOException e) {
-
 			}
+			System.out.println("*" + nick + " left (ID: " + mId + ")");
+			quit();
+			SimpleServer.clients.remove(nick);
 		} catch (IOException e) {
-
-		} catch (ClassNotFoundException c) {
-
+			if (e.toString().contains("Socket closed")) {
+				System.out.println(nick + "'s Socket was Closed!");
+			} else {
+				System.out.println("Error while processing Message in " + nick
+						+ " :\n" + e);
+			}
 		}
 	}
 
@@ -149,6 +149,8 @@ class SimpleClientConnection extends Thread {
 			osw.write(s + "\n");
 			osw.flush();
 		} catch (IOException err) {
+			System.out.println("Error while sending Message in " + nick
+					+ " :\n" + err);
 		}
 	}
 
@@ -156,9 +158,8 @@ class SimpleClientConnection extends Thread {
 		String txt = "[" + rec.getTime() + " | " + rec.getIP() + "] <"
 				+ rec.getNick() + "> " + rec.getMessage();
 		System.out.println(txt);
-		for (String a : SimpleServer.clients) {
-			SimpleServer.msgQueue.addMessageToQueue(new Message(txt,
-					SimpleServer.clients.indexOf(a)));
+		for (String a : SimpleServer.clients.keySet()) {
+			SimpleServer.msgQueue.addMessageToQueue(new Message(txt, a));
 		}
 	}
 
@@ -168,15 +169,14 @@ class SimpleClientConnection extends Thread {
 				+ rec.getNick() + "> " + rec.getMessage();
 		System.out.println(txt);
 		String recepient = rec.getMessageType().substring(4);
-		if (!SimpleServer.clients.contains(recepient)) {
+		if (!SimpleServer.clients.keySet().contains(recepient)) {
 			SimpleServer.msgQueue.addMessageToQueue(new Message(
-					"Not Deliverd: " + txt, SimpleServer.clients.indexOf(rec
-							.getNick())));
+					"Not Deliverd: " + txt, rec.getNick()));
 		} else {
-			SimpleServer.msgQueue.addMessageToQueue(new Message(txt,
-					SimpleServer.clients.indexOf(rec.getNick())));
-			SimpleServer.msgQueue.addMessageToQueue(new Message(txt,
-					SimpleServer.clients.indexOf(recepient)));
+			SimpleServer.msgQueue.addMessageToQueue(new Message(txt, rec
+					.getNick()));
+			SimpleServer.msgQueue
+					.addMessageToQueue(new Message(txt, recepient));
 		}
 	}
 
@@ -190,18 +190,27 @@ class SimpleClientConnection extends Thread {
 		String cmsg = txt.substring(txt.indexOf("~") + 3);
 		SimpleServer.msgQueue.addMessageToQueue(new Message(SimpleServer
 				.getTimeStamp()
-				+ "<***Server***>\n"
-				+ SimpleServer.getControlMessage(cmsg) + "\n",
-				SimpleServer.clients.indexOf(rec.getNick())));
+				+ SimpleServer.SERVER_NICK
+				+ "\n"
+				+ SimpleServer.getControlMessage(cmsg), rec.getNick()));
 	}
 
 	void quit() {
-		sendMessage(SimpleServer.getTimeStamp() + "<***Server***> "
-				+ "Connection with Client " + mId + " is being closed.");
+		// None of quit and kick messages are queued to avoid possible race over
 		try {
 			mSocket.close();
 		} catch (IOException e) {
+			System.out.println("Error while closing the connection with "
+					+ nick + ":" + "\n" + e);
+		}
+	}
 
+	void sleep(int seconds) {
+		try {
+			Thread.sleep(seconds * 1000);
+		} catch (InterruptedException e) {
+			System.out.println("Error while sleeping in thread " + nick + ":"
+					+ "\n" + e);
 		}
 	}
 }
@@ -216,10 +225,12 @@ class MessageQueue extends Thread {
 			try {
 				if (msgQueue.size() > 0) {
 					Message msg = msgQueue.take();
-					SimpleServer.clientconnections.get(msg.getDestinationID())
-							.sendMessage(msg.getMessage());
+					SimpleServer.clients.get(msg.getDestination()).sendMessage(
+							msg.getMessage());
 				}
 			} catch (InterruptedException e) {
+				System.out.println("Error while sending message from queue:\n"
+						+ e);
 			}
 		}
 	}
@@ -228,7 +239,7 @@ class MessageQueue extends Thread {
 		try {
 			msgQueue.put(msg);
 		} catch (InterruptedException e) {
-			System.out.println("Error: " + e);
+			System.out.println("Error while adding message to queue:\n" + e);
 		}
 	}
 }
@@ -239,76 +250,70 @@ class ServerOutput extends Thread {
 		String line;
 		Scanner s = new Scanner(System.in);
 		while (!((line = s.nextLine()).equals(":quit"))) {
-			// Will find a better home for these some time later
 			if (line.equals("//list")) {
 				System.out.println(SimpleServer.getControlMessage("list"));
 			} else if (line.equals("//servhelp")) {
-				System.out.println(SimpleServer.servhelp);
+				System.out.println(SimpleServer.SERV_HELP);
 			} else {
-				broadcast(line);
+				serverMessage(line);
 			}
 		}
 
-		for (SimpleClientConnection a : SimpleServer.clientconnections)
+		for (SimpleClientConnection a : SimpleServer.clients.values())
 			a.quit();
-
 		SimpleServer.isServerRunning = false;
 		s.close();
 	}
 
-	void broadcast(String line) {
+	void serverMessage(String line) {
 		if (line.startsWith("!kick ")) {
 			String asshole = line.substring(6);
-			if (SimpleServer.clients.contains(asshole)) {
-				int id = SimpleServer.clients.indexOf(asshole);
-				SimpleServer.msgQueue.addMessageToQueue(new Message(
-						SimpleServer.getTimeStamp() + "<***Server***> "
-								+ "You are being Kicked!", id));
-				SimpleServer.clientconnections.get(id).quit();
-				SimpleServer.clients.set(id, asshole + "**");
+			if (SimpleServer.clients.keySet().contains(asshole)) {
+				SimpleServer.clients.get(asshole).sendMessage(
+						SimpleServer.getTimeStamp() + SimpleServer.SERVER_NICK
+								+ "You are being kicked!");
+				SimpleServer.clients.get(asshole).quit();
+				SimpleServer.clients.remove(asshole);
 				System.out.println(SimpleServer.getTimeStamp()
-						+ "<***Server***> " + asshole + " was kicked!");
+						+ SimpleServer.SERVER_NICK + asshole + " was kicked!");
 			} else {
 				System.out.println(SimpleServer.getTimeStamp()
-						+ "<***Server***> " + asshole + " not found!");
+						+ SimpleServer.SERVER_NICK + asshole + " not found!");
 			}
 		} else if (line.startsWith("!mute")) {
 			String asshole = line.substring(6);
-			if (SimpleServer.clients.contains(asshole)) {
-				int id = SimpleServer.clients.indexOf(asshole);
+			if (SimpleServer.clients.keySet().contains(asshole)) {
 				SimpleServer.msgQueue.addMessageToQueue(new Message(
-						SimpleServer.getTimeStamp() + "<***Server***> "
-								+ "You are muted, huehuehuehue!", id));
-				SimpleServer.clients.set(id, asshole + "***");
+						SimpleServer.getTimeStamp() + SimpleServer.SERVER_NICK
+								+ "You are muted, huehuehuehue!", asshole));
+				SimpleServer.clients.get(asshole).isNickMuted = true;
 				System.out.println(SimpleServer.getTimeStamp()
-						+ "<***Server***> " + asshole + " was muted!");
+						+ SimpleServer.SERVER_NICK + asshole + " was muted!");
 			} else {
 				System.out.println(SimpleServer.getTimeStamp()
-						+ "<***Server***> " + asshole + " not found!");
+						+ SimpleServer.SERVER_NICK + asshole + " not found!");
 			}
 		} else if (line.startsWith("!unmute")) {
 			String niceguy = line.substring(8);
-			if (SimpleServer.clients.contains(niceguy + "***")) {
-				int id = SimpleServer.clients.indexOf(niceguy + "***");
-				SimpleServer.clients.set(id, niceguy);
-				SimpleServer.msgQueue
-						.addMessageToQueue(new Message(SimpleServer
-								.getTimeStamp()
-								+ "<***Server***> "
-								+ "You can start wasting your life again!", id));
+			if (SimpleServer.clients.keySet().contains(niceguy)) {
+				SimpleServer.clients.get(niceguy).isNickMuted = false;
+				SimpleServer.msgQueue.addMessageToQueue(new Message(
+						SimpleServer.getTimeStamp() + SimpleServer.SERVER_NICK
+								+ "You can start wasting your life again!",
+						niceguy));
 				System.out.println(SimpleServer.getTimeStamp()
-						+ "<***Server***> " + niceguy + " was unmuted!");
+						+ SimpleServer.SERVER_NICK + niceguy + " was unmuted!");
 			} else {
 				System.out.println(SimpleServer.getTimeStamp()
-						+ "<***Server***> " + niceguy + " not found!");
+						+ SimpleServer.SERVER_NICK + niceguy + " not found!");
 			}
 		} else {
-			System.out.println(SimpleServer.getTimeStamp() + "<***Server***> "
-					+ line);
-			for (SimpleClientConnection a : SimpleServer.clientconnections) {
+			System.out.println(SimpleServer.getTimeStamp()
+					+ SimpleServer.SERVER_NICK + line);
+			for (String a : SimpleServer.clients.keySet()) {
 				SimpleServer.msgQueue.addMessageToQueue(new Message(
-						SimpleServer.getTimeStamp() + "<***Server***> " + line,
-						(int) a.mId));
+						SimpleServer.getTimeStamp() + SimpleServer.SERVER_NICK
+								+ line, a));
 			}
 		}
 	}
