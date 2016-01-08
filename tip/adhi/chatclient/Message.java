@@ -6,12 +6,12 @@ import java.util.Scanner;
 public class Message implements Serializable {
 
 	private static final long serialVersionUID = 1L;
-	String msg;
-	String msgtype;
-	String ip;
-	String time;
-	String nick;
-	String destNick;
+	private String msg;
+	private String msgtype;
+	private String ip;
+	private String time;
+	private String nick;
+	private String destNick;
 
 	Message(String message) {
 		Scanner splitter = new Scanner(message);
