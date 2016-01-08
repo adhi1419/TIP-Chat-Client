@@ -22,10 +22,11 @@ public class SimpleClient {
 	public static boolean log = false;
 	static Socket sock;
 	public static PrintWriter logger;
+	static int PORT = 8888;
 
 	public static void main(String[] args) throws Exception {
 
-		sock = new Socket((args.length == 1 ? args[0] : "localhost"), 8888);
+		sock = new Socket((args.length == 1 ? args[0] : "localhost"), PORT);
 
 		Scanner s = new Scanner(System.in);
 
@@ -33,8 +34,9 @@ public class SimpleClient {
 		while (nick == null) {
 			System.out.print("Enter your Nick: ");
 			nick = s.nextLine();
-			if (nick.contains("~") || nick.contains("--")) {
-				System.out.println("Nick contains Invalid Character(s) (~/--)");
+			if (nick.contains("~") || nick.contains("--") || nick.contains(" ")) {
+				System.out
+						.println("Nick contains Invalid Character(s) (~/--) or a space");
 				nick = null;
 			}
 		}
@@ -44,17 +46,18 @@ public class SimpleClient {
 		// This Thread listens for messages from the Server
 		ClientReceiver cr = new ClientReceiver(sock);
 		cr.start();
-		
+
 		// The Client chats here
 		String line;
-		while (!((line = s.nextLine()).equals(":quit")) && !sock.isClosed()) {
+		while (!((line = s.nextLine()).equals(":quit"))) {
+
 			if (line.equals("//startlog"))
 				log = true;
 			else if (line.equals("//stoplog")) {
 				log = false;
-				SimpleClient
-						.logMessage("Your messages are not being logged now.");
+				logMessage("Your messages are not being logged now.");
 			}
+
 			if (!(line.contains("~") || line.contains("--"))) {
 				if (line.length() > 0)
 					sendMessage(line);
@@ -106,6 +109,18 @@ public class SimpleClient {
 		}
 	}
 
+	static void sendPong() {
+		try {
+			OutputStreamWriter osw = new OutputStreamWriter(
+					sock.getOutputStream());
+			osw.write("PONG~ ~ ~ \n");
+			osw.flush();
+		} catch (IOException e) {
+			System.out.println("Error while sending Pong:\n" + e);
+		}
+
+	}
+
 	static void logMessage(String message) {
 		try {
 			if (!new File("./log").exists()) {
@@ -136,20 +151,33 @@ class ClientReceiver extends Thread {
 					mSocket.getInputStream()));
 			String line;
 			while ((line = br.readLine()) != null) {
-				System.out.println(line);
-				if (SimpleClient.log) {
-					SimpleClient.logMessage(line);
+				if (!line.equals("PING")) {
+					System.out.println(line);
+					if (SimpleClient.log) {
+						SimpleClient.logMessage(line);
+					}
+				} else {
+					SimpleClient.sendPong();
 				}
 			}
+
 			mSocket.close();
+			System.exit(0);
+
 		} catch (IOException e) {
+
 			if (e.toString().contains("Socket closed")) {
 				System.out
 						.println("The Server closed the connection with the Client!");
 			} else {
-				System.out.println("Error while receiving Message:\n" + e);
+				if (e.toString().contains("Connection reset")) {
+					System.out.println("The Server was closed!");
+					System.exit(0);
+				} else {
+					System.out.println("Error while receiving Message:\n" + e);
+				}
 			}
-		}
 
+		}
 	}
 }
